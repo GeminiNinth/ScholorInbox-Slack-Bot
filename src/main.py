@@ -119,6 +119,10 @@ class ScholarInboxBot:
                 logger.warning("No papers remaining after filtering")
                 return
             
+            # Sort papers according to config
+            papers = self._sort_papers(papers)
+            logger.info(f"Sorted papers by: {self.config.sorting.order}")
+            
             logger.info(f"Processing {len(papers)} papers...")
             logger.info("")
             
@@ -178,6 +182,70 @@ class ScholarInboxBot:
         except Exception as e:
             logger.error(f"Workflow failed: {e}", exc_info=True)
             raise
+    
+    def _sort_papers(self, papers):
+        """Sort papers according to configuration."""
+        from datetime import datetime
+        
+        sort_order = self.config.sorting.order
+        
+        if sort_order == "relevance_desc":
+            # Sort by relevance score (highest first)
+            return sorted(
+                papers,
+                key=lambda p: p.paper_relevance.relevance_score if p.paper_relevance else -999999,
+                reverse=True
+            )
+        elif sort_order == "relevance_asc":
+            # Sort by relevance score (lowest first)
+            return sorted(
+                papers,
+                key=lambda p: p.paper_relevance.relevance_score if p.paper_relevance else -999999,
+                reverse=False
+            )
+        elif sort_order == "date_desc":
+            # Sort by submission date (newest first)
+            def get_date_key(paper):
+                if not paper.submitted_date:
+                    return datetime.min
+                try:
+                    # Try parsing common date formats
+                    for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"]:
+                        try:
+                            return datetime.strptime(paper.submitted_date, fmt)
+                        except ValueError:
+                            continue
+                    return datetime.min
+                except:
+                    return datetime.min
+            
+            return sorted(papers, key=get_date_key, reverse=True)
+        elif sort_order == "date_asc":
+            # Sort by submission date (oldest first)
+            def get_date_key(paper):
+                if not paper.submitted_date:
+                    return datetime.min
+                try:
+                    for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"]:
+                        try:
+                            return datetime.strptime(paper.submitted_date, fmt)
+                        except ValueError:
+                            continue
+                    return datetime.min
+                except:
+                    return datetime.min
+            
+            return sorted(papers, key=get_date_key, reverse=False)
+        elif sort_order == "dom_order":
+            # Preserve DOM order (no sorting)
+            return papers
+        else:
+            logger.warning(f"Unknown sort order '{sort_order}', using default (relevance_desc)")
+            return sorted(
+                papers,
+                key=lambda p: p.paper_relevance.relevance_score if p.paper_relevance else -999999,
+                reverse=True
+            )
 
 
 def main():

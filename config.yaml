@@ -88,3 +88,14 @@ filter:
   set_threshold: false # Enable relevance threshold filtering
   relevance_threshold: 0 # Threshold for relevance score (can be negative, 0 means no filtering when set_threshold is true)
   require_github: false # Only include papers with GitHub links
+
+# Paper sorting configuration
+sorting:
+  # Sort order for papers
+  # Options:
+  #   - "relevance_desc": Sort by relevance score (highest first)
+  #   - "relevance_asc": Sort by relevance score (lowest first)
+  #   - "date_desc": Sort by submission date (newest first)
+  #   - "date_asc": Sort by submission date (oldest first)
+  #   - "dom_order": Preserve DOM order from Scholar Inbox (default)
+  order: "relevance_desc"

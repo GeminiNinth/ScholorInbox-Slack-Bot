@@ -107,3 +107,8 @@ class Config(BaseModel):
         require_github: bool = Field(False, description="Only include papers with GitHub links")
     
     filter: FilterConfig = Field(default_factory=FilterConfig)
+    
+    class SortingConfig(BaseModel):
+        order: str = Field("relevance_desc", description="Sort order for papers (relevance_desc, relevance_asc, date_desc, date_asc, dom_order)")
+    
+    sorting: SortingConfig = Field(default_factory=SortingConfig)
