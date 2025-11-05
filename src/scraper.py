@@ -135,15 +135,16 @@ class ScholarInboxScraper:
         
         papers_data = page.evaluate("""
         () => {
-            // Find all arXiv links
+            // Find all arXiv links and track their first appearance position
             const allLinks = Array.from(document.querySelectorAll('a[href*="arxiv.org"]'));
             
-            // Group by arXiv ID
+            // Group by arXiv ID and track first appearance order
             const paperGroups = {};
+            const firstAppearanceOrder = [];
             
             allLinks.forEach(link => {
                 const href = link.href;
-                const match = href.match(/arxiv\\.org\\/(abs|pdf|html)\\/([\\d\\.]+)/);
+                const match = href.match(/arxiv\.org\/(abs|pdf|html)\/([\d\.]+)/);
                 if (!match) return;
                 
                 const arxivId = match[2];
@@ -155,8 +156,10 @@ class ScholarInboxScraper:
                         href: href,
                         titleLink: null,
                         authorsLink: null,
-                        metadata: {}
+                        metadata: {},
+                        firstAppearanceIndex: allLinks.indexOf(link)
                     };
+                    firstAppearanceOrder.push(arxivId);
                 }
                 
                 // Check if this is an authors link (contains comma and is long)
@@ -169,10 +172,10 @@ class ScholarInboxScraper:
                 }
             });
             
-            // Filter papers that have both title and authors
-            const validPapers = Object.values(paperGroups).filter(p => 
-                p.titleLink && p.authorsLink
-            );
+            // Filter papers that have both title and authors, maintaining DOM order
+            const validPapers = firstAppearanceOrder
+                .map(arxivId => paperGroups[arxivId])
+                .filter(p => p.titleLink && p.authorsLink);
             
             // Extract metadata and relevance scores for each paper
             validPapers.forEach((paper, paperIndex) => {
@@ -450,37 +453,66 @@ class ScholarInboxScraper:
                             
                             console.log(`\nProcessing image ${{imgIdx + 1}}: ${{filename}}`);
                             
-                            // Find the figure container (colored box) by traversing up from the image
-                            let figContainer = img.parentElement;
+                            // Find caption by looking for the element to the right of the image
                             let caption = '';
                             
-                            for (let level = 0; level < 8; level++) {{
-                                if (!figContainer) break;
-                                
-                                const containerText = figContainer.textContent || '';
-                                
-                                // Check if this container has a figure caption
-                                const captionMatch = containerText.match(/(Fig\\.?\\s*\\d+|Figure\\s*\\d+|TABLE\\s*[IVX]+)[.:]/i);
-                                
-                                if (captionMatch) {{
-                                    console.log(`  Level ${{level}}: Found caption starting with: ${{captionMatch[0]}}`);
+                            // Strategy 1: Check next sibling of image's parent
+                            let imgParent = img.parentElement;
+                            const imgParentRect = imgParent.getBoundingClientRect();
+                            
+                            // Try to find the caption container (should be to the right of the image)
+                            let captionContainer = imgParent.nextElementSibling;
+                            
+                            if (captionContainer) {{
+                                const captionRect = captionContainer.getBoundingClientRect();
+                                // Check if it's to the right of the image
+                                if (captionRect.x > imgParentRect.x + imgParentRect.width - 10) {{
+                                    const captionText = captionContainer.textContent || '';
+                                    // Look for Figure/Fig/TABLE pattern
+                                    const captionMatch = captionText.match(/(Fig\.?\s*\d+|Figure\s*\d+|TABLE\s*[IVX]+)[.:]?\s*(.+)/i);
                                     
-                                    // Extract full caption text
-                                    const captionPattern = new RegExp(`(${{captionMatch[0]}}[^\\n]*(?:\\n[^\\n]+)*)`, 'i');
-                                    const fullCaptionMatch = containerText.match(captionPattern);
-                                    
-                                    if (fullCaptionMatch) {{
-                                        caption = fullCaptionMatch[1]
-                                            .replace(/\\s+/g, ' ')
+                                    if (captionMatch) {{
+                                        caption = captionMatch[0]
+                                            .replace(/\s+/g, ' ')
                                             .trim()
                                             .substring(0, 500);
-                                        
-                                        console.log(`  Extracted caption: ${{caption.substring(0, 100)}}...`);
-                                        break;
+                                        console.log(`  Found caption via nextSibling: ${{caption.substring(0, 100)}}...`);
+                                    }} else if (captionText.trim().length > 20) {{
+                                        // If no Figure pattern but has substantial text, use it
+                                        caption = captionText
+                                            .replace(/\s+/g, ' ')
+                                            .trim()
+                                            .substring(0, 500);
+                                        console.log(`  Found caption text (no Figure pattern): ${{caption.substring(0, 100)}}...`);
                                     }}
                                 }}
+                            }}
+                            
+                            // Strategy 2: If no caption found, look in parent's siblings
+                            if (!caption && imgParent.parentElement) {{
+                                const siblings = Array.from(imgParent.parentElement.children);
+                                const imgParentIndex = siblings.indexOf(imgParent);
                                 
-                                figContainer = figContainer.parentElement;
+                                // Check siblings after the image container
+                                for (let i = imgParentIndex + 1; i < siblings.length; i++) {{
+                                    const sibling = siblings[i];
+                                    const siblingRect = sibling.getBoundingClientRect();
+                                    
+                                    // Check if sibling is to the right
+                                    if (siblingRect.x > imgParentRect.x + imgParentRect.width - 10) {{
+                                        const siblingText = sibling.textContent || '';
+                                        const captionMatch = siblingText.match(/(Fig\.?\s*\d+|Figure\s*\d+|TABLE\s*[IVX]+)[.:]?\s*(.+)/i);
+                                        
+                                        if (captionMatch) {{
+                                            caption = captionMatch[0]
+                                                .replace(/\s+/g, ' ')
+                                                .trim()
+                                                .substring(0, 500);
+                                            console.log(`  Found caption via parent sibling: ${{caption.substring(0, 100)}}...`);
+                                            break;
+                                        }}
+                                    }}
+                                }}
                             }}
                             
                             // Fallback: if no caption found, use default
