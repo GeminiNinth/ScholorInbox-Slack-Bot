@@ -173,9 +173,12 @@ class ScholarInboxScraper:
                     const bibtexBtn = document.querySelector('button[aria-label="Copy bibtex or add this paper to Zotero/Mendeley"]');
                     if (!bibtexBtn) {
                         console.log('  ✗ Bibtex button not found');
-                        // Close dialog with ESC key
-                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
-                        await new Promise(r => setTimeout(r, 300));
+                        // Close Share dialog with backdrop click
+                        const backdrop = document.querySelector('[class*="MuiBackdrop-root"]');
+                        if (backdrop) {
+                            backdrop.click();
+                            await new Promise(r => setTimeout(r, 300));
+                        }
                         continue;
                     }
                     
@@ -194,8 +197,14 @@ class ScholarInboxScraper:
                     
                     if (!bibtex) {
                         console.log('  ✗ Bibtex not found in textarea');
-                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
-                        await new Promise(r => setTimeout(r, 300));
+                        // Close both dialogs with backdrop clicks
+                        for (let i = 0; i < 2; i++) {
+                            const backdrop = document.querySelector('[class*="MuiBackdrop-root"]');
+                            if (backdrop) {
+                                backdrop.click();
+                                await new Promise(r => setTimeout(r, 300));
+                            }
+                        }
                         continue;
                     }
                     
@@ -271,9 +280,16 @@ class ScholarInboxScraper:
                         }
                     }
                     
-                    // Close dialog with ESC key
-                    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
-                    await new Promise(r => setTimeout(r, 500));
+                    // Close all dialogs by clicking backdrop twice
+                    // First click closes Bibtex dialog, second click closes Share dialog
+                    for (let i = 0; i < 2; i++) {
+                        const backdrop = document.querySelector('[class*="MuiBackdrop-root"]');
+                        if (backdrop) {
+                            backdrop.click();
+                            await new Promise(r => setTimeout(r, 300));
+                        }
+                    }
+                    await new Promise(r => setTimeout(r, 200));
                     
                     if (!parsed.title || !parsed.authors) {
                         console.log('  ✗ Missing title or authors');
@@ -297,10 +313,15 @@ class ScholarInboxScraper:
                     
                 } catch (err) {
                     console.log(`  ✗ Error processing paper: ${err.message}`);
-                    // Try to close any open dialogs with ESC key
+                    // Try to close any open dialogs with backdrop clicks
                     try {
-                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
-                        await new Promise(r => setTimeout(r, 300));
+                        for (let i = 0; i < 2; i++) {
+                            const backdrop = document.querySelector('[class*="MuiBackdrop-root"]');
+                            if (backdrop) {
+                                backdrop.click();
+                                await new Promise(r => setTimeout(r, 300));
+                            }
+                        }
                     } catch (e) {}
                 }
             }
