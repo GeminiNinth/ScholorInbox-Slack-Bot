@@ -131,59 +131,179 @@ class ScholarInboxScraper:
             raise RuntimeError("Failed to install Playwright browsers") from err
     
     def _extract_all_papers(self, page: Page) -> List[dict]:
-        """Extract all recommendation papers from the page."""
+        """Extract all recommendation papers from the page using Bibtex."""
         
         papers_data = page.evaluate("""
-        () => {
-            // Find all arXiv links
-            const allLinks = Array.from(document.querySelectorAll('a[href*="arxiv.org"]'));
+        async () => {
+            console.log('=== Starting paper extraction ===');
             
-            // Group by arXiv ID
-            const paperGroups = {};
+            // Find all Share buttons
+            const shareButtons = Array.from(document.querySelectorAll('button[aria-label="Share this paper"]'));
+            console.log(`Found ${shareButtons.length} share buttons`);
             
-            allLinks.forEach(link => {
-                const href = link.href;
-                const match = href.match(/arxiv\\.org\\/(abs|pdf|html)\\/([\\d\\.]+)/);
-                if (!match) return;
+            const allPapers = [];
+            
+            for (let i = 0; i < shareButtons.length; i++) {
+                const shareBtn = shareButtons[i];
+                console.log(`\n--- Processing paper ${i + 1}/${shareButtons.length} ---`);
                 
-                const arxivId = match[2];
-                const text = (link.textContent || '').trim();
-                
-                if (!paperGroups[arxivId]) {
-                    paperGroups[arxivId] = {
+                try {
+                    // Click share button
+                    shareBtn.click();
+                    await new Promise(r => setTimeout(r, 500));
+                    
+                    // Click bibtex button
+                    const bibtexBtn = document.querySelector('button[aria-label="Copy bibtex or add this paper to Zotero/Mendeley"]');
+                    if (!bibtexBtn) {
+                        console.log('  ✗ Bibtex button not found');
+                        // Close dialog by clicking outside or ESC
+                        document.body.click();
+                        await new Promise(r => setTimeout(r, 300));
+                        continue;
+                    }
+                    
+                    bibtexBtn.click();
+                    await new Promise(r => setTimeout(r, 300));
+                    
+                    // Get bibtex from textarea
+                    const textareas = document.querySelectorAll('textarea');
+                    let bibtex = '';
+                    for (const ta of textareas) {
+                        if (ta.value && (ta.value.includes('@inproceedings') || ta.value.includes('@article'))) {
+                            bibtex = ta.value;
+                            break;
+                        }
+                    }
+                    
+                    if (!bibtex) {
+                        console.log('  ✗ Bibtex not found in textarea');
+                        document.body.click();
+                        await new Promise(r => setTimeout(r, 300));
+                        continue;
+                    }
+                    
+                    console.log(`  ✓ Got bibtex: ${bibtex.substring(0, 100)}...`);
+                    
+                    // Parse bibtex
+                    const parsed = {};
+                    
+                    // Extract author
+                    const authorMatch = bibtex.match(/author=\{([^}]+)\}/);
+                    if (authorMatch) parsed.authors = authorMatch[1];
+                    
+                    // Extract title
+                    const titleMatch = bibtex.match(/title=\{([^}]+)\}/);
+                    if (titleMatch) parsed.title = titleMatch[1];
+                    
+                    // Extract journal
+                    const journalMatch = bibtex.match(/journal=\{([^}]+)\}/);
+                    if (journalMatch) parsed.journal = journalMatch[1];
+                    
+                    // Extract booktitle
+                    const booktitleMatch = bibtex.match(/booktitle=\{([^}]+)\}/);
+                    if (booktitleMatch) parsed.booktitle = booktitleMatch[1];
+                    
+                    // Extract volume (arXiv ID for arXiv papers)
+                    const volumeMatch = bibtex.match(/volume=\{([^}]+)\}/);
+                    if (volumeMatch) parsed.volume = volumeMatch[1];
+                    
+                    // Extract year
+                    const yearMatch = bibtex.match(/year=\{([^}]+)\}/);
+                    if (yearMatch) parsed.year = yearMatch[1];
+                    
+                    console.log('  Parsed:', parsed);
+                    
+                    // Determine paper type and get URL
+                    let paperUrl = null;
+                    let arxivId = null;
+                    let isArxiv = false;
+                    
+                    if (parsed.journal === 'arXiv' && parsed.volume) {
+                        // arXiv paper
+                        arxivId = parsed.volume;
+                        paperUrl = `https://arxiv.org/abs/${arxivId}`;
+                        isArxiv = true;
+                        console.log(`  ✓ arXiv paper: ${arxivId}`);
+                    } else {
+                        // Non-arXiv paper - find title link
+                        // Go back to find the title link for this paper
+                        // We need to find the paper container that contains this share button
+                        let container = shareBtn;
+                        for (let level = 0; level < 10; level++) {
+                            container = container.parentElement;
+                            if (!container) break;
+                            
+                            // Look for a link with the title
+                            const titleLinks = Array.from(container.querySelectorAll('a'));
+                            for (const link of titleLinks) {
+                                const linkText = (link.textContent || '').trim();
+                                // Match title (allow some variation due to special chars)
+                                if (linkText.length > 30 && parsed.title && 
+                                    (linkText.includes(parsed.title.substring(0, 30)) || 
+                                     parsed.title.includes(linkText.substring(0, 30)))) {
+                                    paperUrl = link.href;
+                                    console.log(`  ✓ Found title link: ${paperUrl}`);
+                                    break;
+                                }
+                            }
+                            if (paperUrl) break;
+                        }
+                        
+                        if (!paperUrl) {
+                            console.log('  ✗ Could not find paper URL');
+                        }
+                    }
+                    
+                    // Close dialog
+                    document.body.click();
+                    await new Promise(r => setTimeout(r, 300));
+                    
+                    if (!parsed.title || !parsed.authors) {
+                        console.log('  ✗ Missing title or authors');
+                        continue;
+                    }
+                    
+                    allPapers.push({
+                        title: parsed.title,
+                        authors: parsed.authors,
                         arxivId: arxivId,
-                        href: href,
-                        titleLink: null,
-                        authorsLink: null,
+                        paperUrl: paperUrl,
+                        isArxiv: isArxiv,
+                        journal: parsed.journal,
+                        booktitle: parsed.booktitle,
+                        year: parsed.year,
+                        bibtex: bibtex,
                         metadata: {}
-                    };
+                    });
+                    
+                    console.log(`  ✓ Added paper: ${parsed.title.substring(0, 50)}`);
+                    
+                } catch (err) {
+                    console.log(`  ✗ Error processing paper: ${err.message}`);
+                    // Try to close any open dialogs
+                    try {
+                        document.body.click();
+                    } catch (e) {}
                 }
-                
-                // Check if this is an authors link (contains comma and is long)
-                if (text.includes(',') && text.length > 30) {
-                    paperGroups[arxivId].authorsLink = text;
-                }
-                // Otherwise, if it's long and doesn't contain comma or pipe, it's a title
-                else if (text.length > 30 && !text.includes('|') && !text.includes(',')) {
-                    paperGroups[arxivId].titleLink = text;
-                }
-            });
+            }
             
-            // Filter papers that have both title and authors
-            const validPapers = Object.values(paperGroups).filter(p => 
-                p.titleLink && p.authorsLink
-            );
+            console.log(`\n=== Extracted ${allPapers.length} papers ===`);
+            
+            // Now extract relevance scores for each paper
+            const validPapers = allPapers;
             
             // Extract metadata and relevance scores for each paper
             validPapers.forEach((paper, paperIndex) => {
-                console.log(`\n=== DEBUG: Extracting relevance for paper ${paperIndex + 1}: ${paper.titleLink.substring(0, 50)} ===`);
+                console.log(`\n=== DEBUG: Extracting relevance for paper ${paperIndex + 1}: ${paper.title.substring(0, 50)} ===`);
                 
-                // Find the container for this paper
-                const links = Array.from(document.querySelectorAll(`a[href*="${paper.arxivId}"]`));
-                console.log(`Found ${links.length} links for arXiv ID ${paper.arxivId}`);
-                if (links.length === 0) return;
+                // Find the container for this paper by looking for Share button
+                const shareButtons = Array.from(document.querySelectorAll('button[aria-label="Share this paper"]'));
+                if (paperIndex >= shareButtons.length) {
+                    console.log('  ✗ Share button not found for this paper index');
+                    return;
+                }
                 
-                let container = links[0];
+                let container = shareButtons[paperIndex];
                 for (let i = 0; i < 15; i++) {
                     container = container.parentElement;
                     if (!container) break;
@@ -265,26 +385,31 @@ class ScholarInboxScraper:
         return papers_data
     
     def _extract_paper_full_info(self, page: Page, paper_data: dict, index: int) -> Optional[Paper]:
-        """Extract full information for a paper."""
+        """Extract full information for a paper (supports both arXiv and non-arXiv)."""
         
         try:
-            title = paper_data.get('titleLink')
-            authors_text = paper_data.get('authorsLink', '')
+            # New Bibtex-based format
+            title = paper_data.get('title')
+            authors_text = paper_data.get('authors', '')
             arxiv_id = paper_data.get('arxivId')
-            arxiv_url = paper_data.get('href')
+            is_arxiv = paper_data.get('isArxiv', False)
+            paper_url = paper_data.get('paperUrl')
             
             # Parse authors
             authors = self._parse_authors(authors_text)
             
-            # Get arXiv HTML URL
-            arxiv_html_url = f"https://arxiv.org/html/{arxiv_id}" if arxiv_id else None
-            
             # Get metadata
             metadata = paper_data.get('metadata') or {}
-
-            # Fetch official arXiv metadata when available
+            
+            # For arXiv papers, fetch official metadata
             arxiv_metadata = None
-            if arxiv_id:
+            arxiv_html_url = None
+            arxiv_url = None
+            
+            if is_arxiv and arxiv_id:
+                arxiv_html_url = f"https://arxiv.org/html/{arxiv_id}"
+                arxiv_url = f"https://arxiv.org/abs/{arxiv_id}"
+                
                 arxiv_metadata = self._get_arxiv_metadata(arxiv_id)
                 if arxiv_metadata:
                     title = arxiv_metadata.get('title') or title
@@ -296,6 +421,14 @@ class ScholarInboxScraper:
                     metadata['abs_url'] = arxiv_metadata.get('abs_url') or metadata.get('abs_url')
                     metadata['doi'] = arxiv_metadata.get('doi') or metadata.get('doi')
             
+            # For non-arXiv papers, use the paper URL from bibtex
+            if not is_arxiv:
+                arxiv_url = paper_url  # Use the conference/journal URL
+                # Set conference from booktitle or journal
+                if paper_data.get('booktitle'):
+                    metadata['conference'] = paper_data.get('booktitle')
+                elif paper_data.get('journal'):
+                    metadata['conference'] = paper_data.get('journal')
             
             # Extract relevance scores
             relevance_data = metadata.get('relevance')
@@ -309,10 +442,13 @@ class ScholarInboxScraper:
             
             # Extract abstract
             abstract = ""
-            if arxiv_id:
+            if is_arxiv and arxiv_id:
                 abstract = self._extract_abstract_for_arxiv(page, arxiv_id)
             if arxiv_metadata and arxiv_metadata.get('abstract'):
                 abstract = arxiv_metadata['abstract']
+            # For non-arXiv papers, try to extract abstract from the page
+            elif not is_arxiv:
+                abstract = self._extract_abstract_generic(page, title)
             
             # Create paper object
             paper = Paper(
@@ -330,7 +466,11 @@ class ScholarInboxScraper:
             )
             
             # Extract teaser figures with captions
-            paper.teaser_figures = self._extract_teaser_figures_for_arxiv(page, arxiv_id, paper)
+            if is_arxiv and arxiv_id:
+                paper.teaser_figures = self._extract_teaser_figures_for_arxiv(page, arxiv_id, paper)
+            else:
+                # For non-arXiv papers, extract figures by title
+                paper.teaser_figures = self._extract_teaser_figures_generic(page, title, paper)
             
             return paper
         
@@ -347,6 +487,65 @@ class ScholarInboxScraper:
         if metadata:
             self._arxiv_metadata_cache[arxiv_id] = metadata
         return metadata
+    
+    def _extract_abstract_generic(self, page: Page, title: str) -> str:
+        """Extract abstract for non-arXiv papers by finding the abstract button near the title."""
+        try:
+            # Try to find abstract by looking for the paper with this title
+            abstract = page.evaluate(f"""
+            async (paperTitle) => {{
+                // Find all links that might contain the title
+                const allLinks = Array.from(document.querySelectorAll('a'));
+                let titleLink = null;
+                
+                for (const link of allLinks) {{
+                    const linkText = (link.textContent || '').trim();
+                    // Match title (allow some variation)
+                    if (linkText.length > 30 && paperTitle && 
+                        (linkText.includes(paperTitle.substring(0, 30)) || 
+                         paperTitle.includes(linkText.substring(0, 30)))) {{
+                        titleLink = link;
+                        break;
+                    }}
+                }}
+                
+                if (!titleLink) return '';
+                
+                // Find the container
+                let container = titleLink.parentElement;
+                for (let i = 0; i < 10; i++) {{
+                    if (!container) break;
+                    
+                    // Find abstract button
+                    const abstractBtn = container.querySelector('button[aria-label="show abstract"]');
+                    if (abstractBtn) {{
+                        abstractBtn.click();
+                        
+                        // Wait for abstract to appear
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        // Find abstract text (in <p> tags)
+                        const paragraphs = container.querySelectorAll('p');
+                        for (const p of paragraphs) {{
+                            const text = p.textContent || '';
+                            if (text.length > 100) {{
+                                return text.trim();
+                            }}
+                        }}
+                    }}
+                    
+                    container = container.parentElement;
+                }}
+                
+                return '';
+            }}
+            """, title)
+            
+            return abstract if isinstance(abstract, str) else ""
+        
+        except Exception as e:
+            logger.debug(f"Could not extract abstract for non-arXiv paper: {e}")
+            return ""
     
     def _extract_abstract_for_arxiv(self, page: Page, arxiv_id: str) -> str:
         """Extract abstract by clicking abstract button for specific arXiv ID."""
@@ -392,6 +591,162 @@ class ScholarInboxScraper:
         except Exception as e:
             logger.debug(f"Could not extract abstract: {e}")
             return ""
+    
+    def _extract_teaser_figures_generic(self, page: Page, title: str, paper: Paper) -> List[TeaserFigure]:
+        """Extract teaser figures for non-arXiv papers by finding the paper container via title."""
+        figures = []
+        
+        try:
+            figures_data = page.evaluate(f"""
+            async (paperTitle) => {{
+                console.log(`\n=== DEBUG: Extracting figures for paper: ${{paperTitle.substring(0, 50)}} ===`);
+                
+                const figuresData = [];
+                
+                // Find the title link to locate the paper container
+                const allLinks = Array.from(document.querySelectorAll('a'));
+                let titleLink = null;
+                
+                for (const link of allLinks) {{
+                    const linkText = (link.textContent || '').trim();
+                    // Match title (allow some variation)
+                    if (linkText.length > 30 && paperTitle && 
+                        (linkText.includes(paperTitle.substring(0, 30)) || 
+                         paperTitle.includes(linkText.substring(0, 30)))) {{
+                        titleLink = link;
+                        break;
+                    }}
+                }}
+                
+                if (!titleLink) {{
+                    console.log('Title link not found, cannot locate paper container');
+                    return [];
+                }}
+                
+                // Find the paper container by traversing up from the title link
+                let paperContainer = titleLink;
+                for (let i = 0; i < 15; i++) {{
+                    if (!paperContainer) break;
+                    
+                    // Check for "show more" button and click it
+                    const showMoreBtn = paperContainer.querySelector('button[aria-label="show more"]');
+                    if (showMoreBtn) {{
+                        console.log(`  Found 'show more' button at level ${{i}}, clicking...`);
+                        showMoreBtn.click();
+                        // Wait for images to load
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }}
+                    
+                    // Look for images within this container
+                    const imagesInContainer = paperContainer.querySelectorAll('img');
+                    
+                    // Check if this container has images with .jpeg/.jpg extension
+                    const validImages = Array.from(imagesInContainer).filter(img => {{
+                        const src = img.src || '';
+                        const filename = src.substring(src.lastIndexOf('/') + 1);
+                        // Match pattern: number.number.jpeg (e.g., 4449266.0.jpeg)
+                        return /^\\d+\\.\\d+\\.jpe?g$/i.test(filename);
+                    }});
+                    
+                    if (validImages.length > 0) {{
+                        console.log(`Found paper container at level ${{i}} with ${{validImages.length}} images`);
+                        
+                        // Extract each image with its caption
+                        for (let imgIdx = 0; imgIdx < validImages.length; imgIdx++) {{
+                            const img = validImages[imgIdx];
+                            const src = img.src;
+                            const filename = src.substring(src.lastIndexOf('/') + 1);
+                            
+                            console.log(`\nProcessing image ${{imgIdx + 1}}: ${{filename}}`);
+                            
+                            // Find the figure container (colored box) by traversing up from the image
+                            let figContainer = img.parentElement;
+                            let caption = '';
+                            
+                            for (let level = 0; level < 8; level++) {{
+                                if (!figContainer) break;
+                                
+                                const containerText = figContainer.textContent || '';
+                                
+                                // Check if this container has a figure caption
+                                const captionMatch = containerText.match(/(Fig\\.?\\s*\\d+|Figure\\s*\\d+|TABLE\\s*[IVX]+)[.:]/i);
+                                
+                                if (captionMatch) {{
+                                    console.log(`  Level ${{level}}: Found caption starting with: ${{captionMatch[0]}}`);
+                                    
+                                    // Extract full caption text
+                                    const captionPattern = new RegExp(`(${{captionMatch[0]}}[^\\n]*(?:\\n[^\\n]+)*)`, 'i');
+                                    const fullCaptionMatch = containerText.match(captionPattern);
+                                    
+                                    if (fullCaptionMatch) {{
+                                        caption = fullCaptionMatch[1]
+                                            .replace(/\\s+/g, ' ')
+                                            .trim()
+                                            .substring(0, 500);
+                                        
+                                        console.log(`  Extracted caption: ${{caption.substring(0, 100)}}...`);
+                                        break;
+                                    }}
+                                }}
+                                
+                                figContainer = figContainer.parentElement;
+                            }}
+                            
+                            // Fallback: if no caption found, use default
+                            if (!caption) {{
+                                caption = `図${{imgIdx + 1}}`;
+                                console.log(`  No caption found, using default: ${{caption}}`);
+                            }}
+                            
+                            figuresData.push({{
+                                url: src,
+                                caption: caption
+                            }});
+                        }}
+                        
+                        break;
+                    }}
+                    
+                    paperContainer = paperContainer.parentElement;
+                }}
+                
+                console.log(`\nTotal figures extracted: ${{figuresData.length}}`);
+                return figuresData;
+            }}
+            """, title)
+            
+            # Download images (remove duplicates by URL and caption combination)
+            seen_combinations = set()
+            unique_figures = []
+            for fig_data in figures_data:
+                # Create a unique key from URL and caption prefix (first 50 chars)
+                caption_prefix = fig_data['caption'][:50] if fig_data['caption'] else ''
+                combination_key = (fig_data['url'], caption_prefix)
+                
+                if combination_key not in seen_combinations:
+                    seen_combinations.add(combination_key)
+                    unique_figures.append(fig_data)
+            
+            logger.info(f"Extracted {len(figures_data)} figures, {len(unique_figures)} unique after deduplication")
+            
+            # Use a generic ID for non-arXiv papers (based on title hash)
+            import hashlib
+            paper_id = hashlib.md5(title.encode()).hexdigest()[:12]
+            
+            for idx, fig_data in enumerate(unique_figures):
+                local_path = self._download_image(fig_data['url'], paper_id, idx)
+                if local_path:
+                    figures.append(TeaserFigure(
+                        image_url=fig_data['url'],
+                        caption=fig_data['caption'],
+                        local_path=str(local_path)
+                    ))
+                    logger.info(f"Downloaded figure {idx + 1}: {fig_data['caption'][:50]}...")
+        
+        except Exception as e:
+            logger.warning(f"Failed to extract teaser figures for non-arXiv paper: {e}")
+        
+        return figures
     
     def _extract_teaser_figures_for_arxiv(self, page: Page, arxiv_id: str, paper: Paper) -> List[TeaserFigure]:
         """Extract teaser figures with proper captions for specific arXiv ID."""
