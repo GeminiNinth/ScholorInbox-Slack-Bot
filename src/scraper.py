@@ -138,8 +138,25 @@ class ScholarInboxScraper:
             console.log('=== Starting paper extraction ===');
             
             // Find all Share buttons
-            const shareButtons = Array.from(document.querySelectorAll('button[aria-label="Share this paper"]'));
-            console.log(`Found ${shareButtons.length} share buttons`);
+            const allShareButtons = Array.from(document.querySelectorAll('button[aria-label="Share this paper"]'));
+            console.log(`Found ${allShareButtons.length} share buttons`);
+            
+            // Filter out duplicate share buttons (each paper has 2 buttons)
+            // Keep only one button per paper by checking y-coordinate proximity
+            const shareButtons = [];
+            const seenYPositions = new Set();
+            
+            for (const btn of allShareButtons) {
+                const rect = btn.getBoundingClientRect();
+                const y = Math.round(rect.y / 100) * 100; // Round to nearest 100px
+                
+                if (!seenYPositions.has(y)) {
+                    seenYPositions.add(y);
+                    shareButtons.push(btn);
+                }
+            }
+            
+            console.log(`Filtered to ${shareButtons.length} unique papers`);
             
             const allPapers = [];
             
@@ -150,20 +167,20 @@ class ScholarInboxScraper:
                 try {
                     // Click share button
                     shareBtn.click();
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, 800));
                     
                     // Click bibtex button
                     const bibtexBtn = document.querySelector('button[aria-label="Copy bibtex or add this paper to Zotero/Mendeley"]');
                     if (!bibtexBtn) {
                         console.log('  ✗ Bibtex button not found');
-                        // Close dialog by clicking outside or ESC
-                        document.body.click();
+                        // Close dialog with ESC key
+                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
                         await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
                     
                     bibtexBtn.click();
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 500));
                     
                     // Get bibtex from textarea
                     const textareas = document.querySelectorAll('textarea');
@@ -177,7 +194,7 @@ class ScholarInboxScraper:
                     
                     if (!bibtex) {
                         console.log('  ✗ Bibtex not found in textarea');
-                        document.body.click();
+                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
                         await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
@@ -254,9 +271,9 @@ class ScholarInboxScraper:
                         }
                     }
                     
-                    // Close dialog
-                    document.body.click();
-                    await new Promise(r => setTimeout(r, 300));
+                    // Close dialog with ESC key
+                    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
+                    await new Promise(r => setTimeout(r, 500));
                     
                     if (!parsed.title || !parsed.authors) {
                         console.log('  ✗ Missing title or authors');
@@ -280,9 +297,10 @@ class ScholarInboxScraper:
                     
                 } catch (err) {
                     console.log(`  ✗ Error processing paper: ${err.message}`);
-                    // Try to close any open dialogs
+                    // Try to close any open dialogs with ESC key
                     try {
-                        document.body.click();
+                        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27}));
+                        await new Promise(r => setTimeout(r, 300));
                     } catch (e) {}
                 }
             }
