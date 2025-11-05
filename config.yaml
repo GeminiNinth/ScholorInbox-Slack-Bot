@@ -1,0 +1,90 @@
+# Scholar Inbox Slack Bot Configuration
+
+# Debug mode (enable verbose logging for troubleshooting)
+debug: true
+
+# Base language for translation and summaries
+language: ja
+
+# Cache directory for downloaded images
+cache_dir: data/cache
+
+# LLM provider configuration
+llm:
+  provider: openai # Options: openai, anthropic, google
+  model: gpt-4o-mini # Model name (gpt-4.1-mini, gpt-4.1-nano, gemini-2.5-flash)
+  temperature: 0.3 # Temperature for generation (0.0-1.0)
+
+# Date range settings
+date_range:
+  max_days: 30 # Maximum number of days in a date range
+
+# Schedule settings
+schedule:
+  check_time: "12:00" # Daily check time (HH:MM format)
+  weekdays_only: true # Run only on weekdays (Mon-Fri)
+
+# Slack posting configuration
+slack:
+  post_elements:
+    title: true
+    authors: true
+    abstract: true
+    paper_relevance: true # Show relevance score (📊 relevance, 👍 thumbs up, 👤 read by)
+    conference: true # Show conference/venue information
+    submitted_date: true # Show submission date
+    categories: true # Show arXiv categories
+    arxiv_url: true
+    github_url: true
+    teaser_figures: true
+
+# Summary generation settings
+summary:
+  max_length: 500 # Maximum characters per summary section
+  custom_instructions: |
+    - In Japanese: 自然な日本語に再構成し、英語直訳調にしない。造語は避け、定訳を用い、助詞を省かない。
+    - In Japanese: 長い前置修飾は避け、節や接続詞を用いて分かりやすくつなぐ。修飾語は必ず修飾対象の直近に置く。
+    - In Japanese: 正式な学術文体を使用する（例：「だ/である」スタイル）
+    - In Japanese: ぶつ切りの短文は統合し、意味の単位ごとに整理する。
+    - In Japanese: 三つ以上の名詞の連続使用や、名詞の連なり表現を避ける。
+    - Keep technical terms and proper nouns in English with explanations in the target language
+    - Captions of figures should be in target language.
+    - Do not over-summarize; include quantitative data and specific numbers
+    - Ensure there are no redundant logical developments or repetitive expressions across all sections when read together.
+    - One-pass clarity and natural flow without changing meaning, data, or conclusions. Maximize practical outcomes with objective, critical, and implementable advice.
+    - Definition of specialist terms shall be explained upon first occurrence, and abbreviations shall be used consistently after definition.
+    - Clearly state the verb and subject, and place them near the beginning of the sentence.
+    - Use one to two simple transitions ("First, Next, However, Therefore") per paragraph.
+    - Avoid repetitive connective expressions and logical developments relying on layout.
+    - Avoid missing verbs and subject-verb agreement in labels.
+    - Avoid undefined abbreviations or specialist terms.
+    - Avoid more than two parentheses () in a sentence.
+    - Avoid redundant connective expressions or logical developments relying on layout.
+    - Avoid em-dashes (—) in text.
+    - Avoid "in this paper" and similar prefixes.
+    - Avoid overly positive or congratulatory comments, and avoid emojis.
+    - Quality check: Does each paragraph start with a clear topic sentence and end with a forward-looking bridge sentence?
+    - Quality check: Is the subject and verb corresponding, and is the modifier in the correct position without causing misinterpretation?
+    - Quality check: Are terms, units, cutoff values, and date formats consistent throughout?
+    - Quality check: Do important claims include supporting evidence (data, logic, citations) and clear implications?
+    - Quality check: Are uncertainties, weaknesses, and trade-offs clearly stated for the main parts? (only for the main parts)
+  sections:
+    - name: "What is this paper about?"
+      prompt: "Explain what problem this paper is trying to solve and provide an overview of the research."
+    - name: "What are the key findings?"
+      prompt: "Explain the contributions of this paper and how it differs from or improves upon prior research."
+    - name: "What are the key technical approaches?"
+      prompt: "Explain the core technical approaches and methods used in this paper."
+    - name: "How they validated the effectiveness of the proposed methods?"
+      prompt: "Explain the experiments and evaluations conducted, and what results were obtained?"
+
+# arXiv settings
+arxiv:
+  prefer_html: true # Prefer HTML version over PDF
+  fallback_to_pdf: true # Fallback to PDF/abstract if HTML not available
+
+# Filtering configuration
+filter:
+  set_threshold: false # Enable relevance threshold filtering
+  relevance_threshold: 0 # Threshold for relevance score (can be negative, 0 means no filtering when set_threshold is true)
+  require_github: false # Only include papers with GitHub links
