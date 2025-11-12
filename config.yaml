@@ -12,7 +12,7 @@ cache_dir: data/cache
 # LLM provider configuration
 llm:
   provider: openai # Options: openai, anthropic, google
-  model: gpt-4o-mini # Model name (gpt-4.1-mini, gpt-4.1-nano, gemini-2.5-flash)
+  model: gpt-4o # Model name (gpt-4.1-mini, gpt-4.1-nano, gemini-2.5-flash)
   temperature: 0.3 # Temperature for generation (0.0-1.0)
 
 # Date range settings
@@ -42,9 +42,14 @@ slack:
 summary:
   max_length: 500 # Maximum characters per summary section
   custom_instructions: |
-    - In Japanese: 自然な日本語に再構成し、英語直訳調にしない。造語は避け、定訳を用い、助詞を省かない。
+    - In Japanese: 自然な日本語に再構成し、英語直訳調にしない。造語は避け、定訳を用いるが、このとき、たとえカタカナでも日本語において一般的でないと思われる用語については括弧つきで元の英単語も入れること（例:Cross-Embodimentという単語が登場したら「クロスエンボディメント（Cross-Embodiment）」とする）。助詞を省かない。
+    - In Japanese: 人名・企業名・大文字の略語・学会名は絶対に邦訳やカタカナ訳せずに英語のままにする。
+    - In Japanese: 研究機関や大学名は日本語+英語にする。（例:Harvard Universityの場合は「ハーバード大学（Harvard University）」）。
+    - In Japanese: INTRODUCTION, CONVENTIONAL RESEARCH, RELATED WORKS, ACKNOWLEDGEMENT, METHOD, RESULT, EVALUATION, CONCLUSIONなどといった各Paragraphに一般に用いられる用語は英語のままにする。
+    - In Japanese: Figure, Fig, Tableなど図表を示す単語は英語のままにする。
+    - In Japanese: 「この論文では」などの前置きは要らない。
     - In Japanese: 長い前置修飾は避け、節や接続詞を用いて分かりやすくつなぐ。修飾語は必ず修飾対象の直近に置く。
-    - In Japanese: 正式な学術文体を使用する（例：「だ/である」スタイル）
+    - In Japanese: 正式な学術文体を使用する（例：「だ/である」スタイル）。「ですます」の敬体は避ける。
     - In Japanese: ぶつ切りの短文は統合し、意味の単位ごとに整理する。
     - In Japanese: 三つ以上の名詞の連続使用や、名詞の連なり表現を避ける。
     - Keep technical terms and proper nouns in English with explanations in the target language
