@@ -1,7 +1,8 @@
 """Task scheduler for automated paper checking."""
 
 import logging
-from typing import Callable
+from datetime import datetime
+from typing import Callable, Optional
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from .models import Config
@@ -12,15 +13,16 @@ logger = logging.getLogger(__name__)
 class TaskScheduler:
     """Scheduler for periodic paper checking."""
     
-    def __init__(self, config: Config):
+    def __init__(self, schedule_config: Config.Schedule):
         """
         Initialize scheduler.
         
         Args:
-            config: Application configuration
+            schedule_config: Schedule configuration
         """
-        self.config = config
+        self.schedule_config = schedule_config
         self.scheduler = BlockingScheduler()
+        self.trigger: Optional[CronTrigger] = None
     
     def schedule_task(self, task_func: Callable, task_name: str = "check_papers"):
         """
@@ -31,12 +33,12 @@ class TaskScheduler:
             task_name: Name of the task
         """
         # Parse check time
-        hour, minute = self._parse_time(self.config.schedule.check_time)
+        hour, minute = self._parse_time(self.schedule_config.check_time)
         
         # Create cron trigger
-        if self.config.schedule.weekdays_only:
+        if self.schedule_config.weekdays_only:
             # Monday to Friday (0-4 in Python's cron, where Monday=0)
-            trigger = CronTrigger(
+            self.trigger = CronTrigger(
                 day_of_week='mon-fri',
                 hour=hour,
                 minute=minute
@@ -44,7 +46,7 @@ class TaskScheduler:
             logger.info(f"Scheduled task '{task_name}' for weekdays at {hour:02d}:{minute:02d}")
         else:
             # Every day
-            trigger = CronTrigger(
+            self.trigger = CronTrigger(
                 hour=hour,
                 minute=minute
             )
@@ -53,7 +55,7 @@ class TaskScheduler:
         # Add job to scheduler
         self.scheduler.add_job(
             task_func,
-            trigger=trigger,
+            trigger=self.trigger,
             id=task_name,
             name=task_name,
             replace_existing=True
@@ -62,6 +64,25 @@ class TaskScheduler:
     def start(self):
         """Start the scheduler."""
         logger.info("Starting scheduler...")
+        
+        # Log next run time using trigger before scheduler starts
+        jobs = self.scheduler.get_jobs()
+        if jobs:
+            if self.trigger:
+                try:
+                    next_run = self.trigger.get_next_fire_time(None, datetime.now())
+                    if next_run:
+                        logger.info(f"Scheduler started successfully. Next run scheduled for: {next_run}")
+                    else:
+                        logger.warning("Could not determine next run time from trigger")
+                except Exception as e:
+                    logger.warning(f"Could not calculate next run time: {e}")
+            else:
+                logger.info(f"Scheduled {len(jobs)} job(s)")
+        else:
+            logger.warning("No jobs scheduled. Scheduler will start but no tasks will run.")
+        
+        logger.info("Scheduler is now running and waiting for scheduled tasks...")
         try:
             self.scheduler.start()
         except (KeyboardInterrupt, SystemExit):

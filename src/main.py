@@ -3,6 +3,7 @@ Main application entry point with filtering and cost tracking.
 """
 
 import sys
+import os
 import logging
 from pathlib import Path
 from typing import Optional
@@ -59,6 +60,19 @@ class ScholarInboxBot:
         # Initialize components
         cache_dir = Path(self.config.cache_dir)
         self.scraper = ScholarInboxScraper(cache_dir)
+        
+        # Set API key in environment before initializing LLM client
+        # This ensures quotes are properly stripped
+        api_key = self.config_manager.get_llm_api_key()
+        if api_key:
+            provider = self.config.llm.provider
+            if provider == "openai":
+                os.environ["OPENAI_API_KEY"] = api_key
+            elif provider == "anthropic":
+                os.environ["ANTHROPIC_API_KEY"] = api_key
+            elif provider == "google":
+                os.environ["GOOGLE_API_KEY"] = api_key
+        
         self.llm_client = LLMClient(self.config)
         self.slack_client = SlackClient(
             self.config_manager.get_slack_token(),
@@ -229,7 +243,8 @@ def main():
             def scheduled_task():
                 bot.check_and_post_papers()
             
-            scheduler.start(scheduled_task)
+            scheduler.schedule_task(scheduled_task)
+            scheduler.start()
     
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")

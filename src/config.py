@@ -11,6 +11,37 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def sanitize_env_value(value: str) -> str:
+    """
+    Sanitize environment variable value by removing surrounding quotes and whitespace.
+    
+    This function handles cases where environment variables might be quoted in .env files
+    or passed via --env-file in Docker, ensuring the actual value is extracted correctly.
+    
+    Args:
+        value: The raw environment variable value
+        
+    Returns:
+        The sanitized value with quotes and whitespace removed
+    """
+    if not value:
+        return ""
+    
+    # Remove surrounding whitespace
+    value = value.strip()
+    
+    # Remove quotes from both ends if present
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        value = value[1:-1].strip()
+    # Also handle cases where only one end has a quote
+    elif value.startswith('"') or value.startswith("'"):
+        value = value[1:].strip()
+    elif value.endswith('"') or value.endswith("'"):
+        value = value[:-1].strip()
+    
+    return value
+
+
 class ConfigManager:
     """Manages application configuration from YAML and environment variables."""
     
@@ -26,11 +57,17 @@ class ConfigManager:
         self.env_path = Path(env_path)
         
         # Load environment variables
+        # Try to load from .env file if it exists
+        # If using --env-file in Docker, environment variables are already set
         if self.env_path.exists():
             load_dotenv(self.env_path)
-            logger.info(f"Loaded environment variables from {self.env_path}")
+            logger.info(f"Successfully loaded .env file from {self.env_path}")
         else:
-            logger.warning(f".env file not found at {self.env_path}")
+            # Check if required env vars are already set (e.g., from --env-file in Docker)
+            if not os.getenv("SCHOLAR_INBOX_SECRET_URL") and not os.getenv("SLACK_BOT_TOKEN"):
+                logger.warning(f".env file not found at {self.env_path}, but environment variables may be set via --env-file")
+            else:
+                logger.debug(f".env file not found at {self.env_path}, using environment variables from system")
         
         # Load YAML configuration
         self.config = self._load_config()
@@ -85,26 +122,40 @@ class ConfigManager:
     
     def get_scholar_inbox_url(self) -> str:
         """Get Scholar Inbox secret URL."""
-        return os.getenv("SCHOLAR_INBOX_SECRET_URL", "")
+        url = os.getenv("SCHOLAR_INBOX_SECRET_URL", "")
+        return sanitize_env_value(url)
     
     def get_slack_token(self) -> str:
         """Get Slack bot token."""
-        return os.getenv("SLACK_BOT_TOKEN", "")
+        token = os.getenv("SLACK_BOT_TOKEN", "")
+        return sanitize_env_value(token)
     
     def get_slack_channel_id(self) -> str:
         """Get Slack channel ID."""
-        return os.getenv("SLACK_CHANNEL_ID", "")
+        channel_id = os.getenv("SLACK_CHANNEL_ID", "")
+        return sanitize_env_value(channel_id)
     
     def get_llm_api_key(self) -> str:
         """Get LLM API key based on configured provider."""
         provider = self.config.llm.provider
         if provider == "openai":
-            return os.getenv("OPENAI_API_KEY", "")
+            key = os.getenv("OPENAI_API_KEY", "")
         elif provider == "anthropic":
-            return os.getenv("ANTHROPIC_API_KEY", "")
+            key = os.getenv("ANTHROPIC_API_KEY", "")
         elif provider == "google":
-            return os.getenv("GOOGLE_API_KEY", "")
-        return ""
+            key = os.getenv("GOOGLE_API_KEY", "")
+        else:
+            return ""
+        
+        key = sanitize_env_value(key)
+        
+        # Debug: Log API key info (without exposing the actual key)
+        if key:
+            logger.debug(f"API key loaded for {provider}: length={len(key)}, starts_with={key[:7]}..., ends_with=...{key[-3:]}")
+        else:
+            logger.warning(f"No API key found for provider: {provider}")
+        
+        return key
     
     def get_config(self) -> Config:
         """Get the loaded configuration object."""

@@ -10,22 +10,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
-
 # Copy project files
 COPY pyproject.toml uv.lock requirements.txt ./
 COPY src/ ./src/
 COPY config.yaml ./
 COPY .env.example ./
+# Note: .env file is not copied into the image for security reasons.
+# It should be mounted at runtime using: -v "$(pwd)/.env:/app/.env"
+# or use --env-file .env to pass environment variables directly
 
-# Install Python dependencies
-RUN uv venv && \
-    . .venv/bin/activate && \
-    uv pip install -r requirements.txt && \
-    playwright install chromium && \
-    playwright install-deps chromium
+# Create virtual environment and install Python dependencies
+RUN python -m venv .venv && \
+    .venv/bin/pip install --upgrade pip && \
+    .venv/bin/pip install -e . && \
+    .venv/bin/python -m playwright install chromium && \
+    .venv/bin/python -m playwright install-deps chromium
 
 # Create data directory
 RUN mkdir -p data/cache
@@ -33,5 +32,8 @@ RUN mkdir -p data/cache
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Run the bot
-CMD [".venv/bin/python", "-m", "src.main", "--mode", "scheduled"]
+# Set entrypoint (fixed command)
+ENTRYPOINT [".venv/bin/python", "-m", "src.main"]
+
+# Default arguments (can be overridden with docker run arguments)
+CMD ["--mode", "once"]

@@ -157,6 +157,7 @@ uv run -m src --mode once --date "20251031"        # YYYYMMDD
 ```
 
 **日付指定の注意事項**:
+
 - デフォルトでは30日までの範囲を指定できます。それを超えると警告が表示されます。
 - 未来の日付を指定するとエラーになります。
 - 1年以上前の日付は警告が表示されますが、実行は可能です。
@@ -173,20 +174,127 @@ uv run -m src --mode scheduled
 
 ボットはバックグラウンドで実行され、`config.yaml` で指定された時間にタスクをトリガーします。停止するには `Ctrl+C` を押してください。
 
-### Dockerでワンコマンド実行する（任意）
+### Dockerで実行する（任意）
 
-Docker を使用する場合は、以下の単一コマンドでイメージのビルドから実行までまとめて行えます（POSIXシェル想定）。
+Docker を使用する場合は、以下のコマンドでイメージのビルドから実行まで行えます。
+
+#### 一度だけ実行する（フォアグラウンド）
+
+ログを直接確認しながら実行する場合：
 
 ```bash
 docker run --rm \
   --env-file .env \
   -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
+  -v "$(pwd)/.env:/app/.env:ro" \
   -v "$(pwd)/data:/app/data" \
   $(docker build -q .) \
   --mode once
 ```
 
-`--mode scheduled` に差し替えれば常駐モードで起動できます。`config.yaml` や `data/` ディレクトリをホストと共有するため、設定・キャッシュはホスト側のファイルをそのまま利用可能です。
+**注意**: `.env`ファイルはイメージに含まれません（セキュリティ上の理由）。実行時に`-v "$(pwd)/.env:/app/.env:ro"`でマウントするか、`--env-file .env`を使用してください。
+
+`--max-papers` や `--date` オプションも使用できます：
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
+  -v "$(pwd)/.env:/app/.env:ro" \
+  -v "$(pwd)/data:/app/data" \
+  $(docker build -q .) \
+  --mode once --max-papers 2
+```
+
+#### スケジュールモードで実行する（フォアグラウンド）
+
+設定したスケジュールで常駐させる場合（ログを直接確認）：
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
+  -v "$(pwd)/.env:/app/.env:ro" \
+  -v "$(pwd)/data:/app/data" \
+  $(docker build -q .) \
+  --mode scheduled
+```
+
+停止するには `Ctrl+C` を押してください。
+
+#### バックグラウンドで実行する
+
+`-d` フラグを使用してバックグラウンドで実行する場合：
+
+```bash
+docker run -d --rm \
+  --name scholarinbox-slack-bot \
+  --env-file .env \
+  -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
+  -v "$(pwd)/.env:/app/.env:ro" \
+  -v "$(pwd)/data:/app/data" \
+  $(docker build -q .) \
+  --mode scheduled
+```
+
+**バックグラウンド実行時のログ確認方法**:
+
+```bash
+# ログをリアルタイムで確認（フォロー）
+docker logs -f scholarinbox-slack-bot
+
+# 最新の100行のログを表示
+docker logs --tail 100 scholarinbox-slack-bot
+
+# 特定の時刻以降のログを表示
+docker logs --since 2025-11-11T12:00:00 scholarinbox-slack-bot
+
+# ログをファイルに保存
+docker logs scholarinbox-slack-bot > bot.log 2>&1
+```
+
+**コンテナの停止・再起動**:
+
+```bash
+# コンテナを停止
+docker stop scholarinbox-slack-bot
+
+# コンテナを再起動
+docker restart scholarinbox-slack-bot
+
+# 実行中のコンテナ一覧を確認
+docker ps
+
+# すべてのコンテナ（停止中も含む）を確認
+docker ps -a
+```
+
+**その他の便利なコマンド**:
+
+```bash
+# コンテナ内のシェルにアクセス（デバッグ用）
+docker exec -it scholarinbox-slack-bot /bin/bash
+
+# コンテナのリソース使用状況を確認
+docker stats scholarinbox-slack-bot
+
+# イメージを事前にビルドしてタグ付け（推奨）
+docker build -t scholarinbox-slack-bot:latest .
+docker run -d --rm \
+  --name scholarinbox-slack-bot \
+  --env-file .env \
+  -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
+  -v "$(pwd)/.env:/app/.env:ro" \
+  -v "$(pwd)/data:/app/data" \
+  scholarinbox-slack-bot:latest \
+  --mode scheduled
+```
+
+**注意事項**:
+
+- `config.yaml` や `data/` ディレクトリをホストと共有するため、設定・キャッシュはホスト側のファイルをそのまま利用できます。
+- `--rm` フラグにより、コンテナ停止時に自動的に削除されます。
+- バックグラウンド実行時は、コンテナ名（`--name scholarinbox-slack-bot`）を指定すると管理が容易です。
 
 ## 設定ファイルの詳細
 
@@ -219,7 +327,7 @@ docker run --rm \
 
 ## プロジェクト構造
 
-```
+```text
 scholar-inbox-slack-bot/
 ├── .env.example          # 環境変数テンプレート
 ├── .env                  # 環境変数ファイル (Git管理外)
