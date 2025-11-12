@@ -450,36 +450,71 @@ class ScholarInboxScraper:
                             
                             console.log(`\nProcessing image ${{imgIdx + 1}}: ${{filename}}`);
                             
-                            // Find the figure container (colored box) by traversing up from the image
+                            // Find the figure container by looking for parent with image + text layout
                             let figContainer = img.parentElement;
                             let caption = '';
                             
-                            for (let level = 0; level < 8; level++) {{
+                            for (let level = 0; level < 10; level++) {{
                                 if (!figContainer) break;
                                 
-                                const containerText = figContainer.textContent || '';
+                                // Strategy 1: Look for sibling elements (image on left, text on right)
+                                const children = Array.from(figContainer.children);
                                 
-                                // Check if this container has a figure caption
-                                const captionMatch = containerText.match(/(Fig\\.?\\s*\\d+|Figure\\s*\\d+|TABLE\\s*[IVX]+)[.:]/i);
-                                
-                                if (captionMatch) {{
-                                    console.log(`  Level ${{level}}: Found caption starting with: ${{captionMatch[0]}}`);
+                                if (children.length >= 2) {{
+                                    console.log(`  Level ${{level}}: Found container with ${{children.length}} children`);
                                     
-                                    // Extract full caption text
-                                    const captionPattern = new RegExp(`(${{captionMatch[0]}}[^\\n]*(?:\\n[^\\n]+)*)`, 'i');
-                                    const fullCaptionMatch = containerText.match(captionPattern);
+                                    let imageChild = null;
+                                    let textChild = null;
                                     
-                                    if (fullCaptionMatch) {{
-                                        caption = fullCaptionMatch[1]
+                                    for (const child of children) {{
+                                        const hasImage = child.querySelector('img') !== null;
+                                        const childText = (child.textContent || '').trim();
+                                        
+                                        if (hasImage) {{
+                                            imageChild = child;
+                                        }} else if (childText.length > 20) {{
+                                            textChild = child;
+                                        }}
+                                    }}
+                                    
+                                    // If we found both image and text children, extract the caption
+                                    if (imageChild && textChild) {{
+                                        caption = textChild.textContent.trim()
                                             .replace(/\\s+/g, ' ')
-                                            .trim()
                                             .substring(0, 500);
                                         
-                                        console.log(`  Extracted caption: ${{caption.substring(0, 100)}}...`);
+                                        console.log(`  Found caption from sibling: ${{caption.substring(0, 100)}}...`);
                                         break;
                                     }}
                                 }}
                                 
+                                // Strategy 2: Try pattern matching as fallback
+                                const containerText = (figContainer.textContent || '').trim();
+                                
+                                if (!caption && containerText.length > 50 && containerText.length < 2000) {{
+                                    const patterns = [
+                                        /(Fig\\.?\\s*\\d+[.:][^\\n]*)/i,
+                                        /(Figure\\s*\\d+[.:][^\\n]*)/i,
+                                        /(Table\\s*\\d+[.:][^\\n]*)/i,
+                                        /(TABLE\\s*[IVX]+[.:][^\\n]*)/i
+                                    ];
+                                    
+                                    for (const pattern of patterns) {{
+                                        const match = containerText.match(pattern);
+                                        if (match) {{
+                                            const startIdx = containerText.indexOf(match[0]);
+                                            const endIdx = Math.min(startIdx + 500, containerText.length);
+                                            caption = containerText.substring(startIdx, endIdx)
+                                                .replace(/\\s+/g, ' ')
+                                                .trim();
+                                            
+                                            console.log(`  Level ${{level}}: Found caption with pattern: ${{caption.substring(0, 100)}}...`);
+                                            break;
+                                        }}
+                                    }}
+                                }}
+                                
+                                if (caption) break;
                                 figContainer = figContainer.parentElement;
                             }}
                             
